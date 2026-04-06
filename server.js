@@ -44,17 +44,22 @@ function probeVideo(inputPath) {
 function compressVideo(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
+      .inputOptions([
+        "-analyzeduration", "5000000",
+        "-probesize", "5000000",
+      ])
       .videoCodec("libx264")
       .audioCodec("aac")
-      .audioBitrate("128k")
+      .audioBitrate("96k")
       .outputOptions([
-        "-crf 28",
-        "-preset veryfast",
+        "-crf 30",
+        "-preset ultrafast",
         "-threads 1",
         "-movflags +faststart",
+        "-max_muxing_queue_size 64",
       ])
       .videoFilters([
-        "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease",
+        "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease",
         "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "format=yuv420p"
       ])
