@@ -228,5 +228,54 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Test endpoint: runs ffmpeg with zero processing to check if it even loads
+app.get("/test-ffmpeg", async (_req, res) => {
+  const { execSync } = require("child_process");
+  try {
+    const version = execSync("ffmpeg -version", { timeout: 5000 }).toString().split("\n")[0];
+    const mem = process.memoryUsage();
+    res.json({ 
+      ok: true, 
+      ffmpeg: version,
+      nodeMemMB: (mem.rss / 1024 / 1024).toFixed(1),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Video compressor listening on :${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`Video compressor listening on :${PORT}`);
+  
+  // Check container memory limit
+  try {
+    const cgroupV2 = require("fs").readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim();
+    console.log(`[STARTUP] Container memory limit (cgroup v2): ${cgroupV2 === "max" ? "unlimited" : (parseInt(cgroupV2) / 1024 / 1024).toFixed(0) + "MB"}`);
+  } catch {
+    try {
+      const cgroupV1 = require("fs").readFileSync("/sys/fs/cgroup/memory/memory.limit_in_bytes", "utf8").trim();
+      console.log(`[STARTUP] Container memory limit (cgroup v1): ${(parseInt(cgroupV1) / 1024 / 1024).toFixed(0)}MB`);
+    } catch {
+      console.log("[STARTUP] Could not read cgroup memory limit");
+    }
+  }
+  
+  // Check total system memory
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  console.log(`[STARTUP] System RAM: total=${(totalMem/1024/1024).toFixed(0)}MB, free=${(freeMem/1024/1024).toFixed(0)}MB`);
+  
+  // Check current process memory
+  const mem = process.memoryUsage();
+  console.log(`[STARTUP] Node.js RSS=${(mem.rss/1024/1024).toFixed(1)}MB, Heap=${(mem.heapUsed/1024/1024).toFixed(1)}MB`);
+  
+  // Verify ffmpeg exists
+  try {
+    const { execSync } = require("child_process");
+    const ver = execSync("ffmpeg -version", { timeout: 5000 }).toString().split("\n")[0];
+    console.log(`[STARTUP] FFmpeg: ${ver}`);
+  } catch (e) {
+    console.error("[STARTUP] FFmpeg NOT FOUND!", e.message);
+  }
+});
