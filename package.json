@@ -1,0 +1,14 @@
+{
+  "name": "video-compressor",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "build": "echo 'No build step'",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.49.4",
+    "express": "^4.18.2",
+    "fluent-ffmpeg": "^2.1.3"
+  }
+}
