@@ -25,6 +25,22 @@ async function updateQueueStatus(queueId, status, error) {
     .eq("id", queueId);
 }
 
+function logMemory(label) {
+  const mem = process.memoryUsage();
+  const totalMB = (mem.rss / 1024 / 1024).toFixed(1);
+  const heapMB = (mem.heapUsed / 1024 / 1024).toFixed(1);
+  console.log(`[MEM ${label}] RSS=${totalMB}MB, Heap=${heapMB}MB`);
+}
+
+function probeVideo(inputPath) {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (err, metadata) => {
+      if (err) return reject(err);
+      resolve(metadata);
+    });
+  });
+}
+
 function compressVideo(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
@@ -34,6 +50,7 @@ function compressVideo(inputPath, outputPath) {
       .outputOptions([
         "-crf 28",
         "-preset veryfast",
+        "-threads 1",
         "-movflags +faststart",
       ])
       .videoFilters([
@@ -41,7 +58,17 @@ function compressVideo(inputPath, outputPath) {
         "scale=trunc(iw/2)*2:trunc(ih/2)*2",
         "format=yuv420p"
       ])
-      .on("end", resolve)
+      .on("start", (cmd) => {
+        console.log("[FFMPEG CMD]", cmd);
+        logMemory("ffmpeg-start");
+      })
+      .on("progress", (p) => {
+        logMemory(`progress-${p.percent?.toFixed(0) || '?'}%`);
+      })
+      .on("end", () => {
+        logMemory("ffmpeg-done");
+        resolve();
+      })
       .on("error", reject)
       .save(outputPath);
   });
@@ -140,8 +167,20 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
         .on("error", reject);
     });
     await dbLog("Downloaded to disk");
+    logMemory("after-download");
 
-    // 2. Compress
+    // 2. Probe video to see what we're dealing with
+    try {
+      const probe = await probeVideo(inputPath);
+      const vs = probe.streams?.find(s => s.codec_type === 'video');
+      if (vs) {
+        await dbLog(`Video: ${vs.width}x${vs.height}, codec=${vs.codec_name}, duration=${probe.format?.duration}s, size=${(probe.format?.size / 1024 / 1024).toFixed(1)}MB`);
+      }
+    } catch (e) {
+      console.log("Probe failed:", e.message);
+    }
+
+    // 3. Compress
     await dbLog("Compressing...");
     await compressVideo(inputPath, outputPath);
 
