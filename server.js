@@ -228,6 +228,35 @@ app.get("/test-ffmpeg", async (_req, res) => {
   }
 });
 
+// Test: generate a tiny video and compress it — proves ffmpeg can actually run
+app.get("/test-compress", async (_req, res) => {
+  const { execSync } = require("child_process");
+  try {
+    logMemory("before-test");
+    
+    // Generate 1 second of black video (tiny, no input file needed)
+    execSync(
+      'ffmpeg -y -f lavfi -i "color=black:s=320x240:d=1" -c:v libx264 -preset ultrafast -threads 1 /app/data/test_out.mp4',
+      { timeout: 30000, stdio: 'pipe' }
+    );
+    
+    logMemory("after-test");
+    
+    const { statSync, unlinkSync } = require("fs");
+    const size = statSync("/app/data/test_out.mp4").size;
+    unlinkSync("/app/data/test_out.mp4");
+    
+    res.json({ 
+      ok: true, 
+      message: "FFmpeg test compression SUCCESSFUL",
+      outputBytes: size,
+    });
+  } catch (e) {
+    logMemory("test-error");
+    res.status(500).json({ ok: false, error: e.message, stderr: e.stderr?.toString()?.slice(-500) });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, async () => {
   console.log(`Video compressor listening on :${PORT}`);
