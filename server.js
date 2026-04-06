@@ -33,8 +33,7 @@ function compressVideo(inputPath, outputPath) {
       .audioBitrate("128k")
       .outputOptions([
         "-crf 28",
-        "-preset fast",
-        "-threads 1",
+        "-preset veryfast",
         "-movflags +faststart",
       ])
       .videoFilters([
