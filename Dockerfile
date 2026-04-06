@@ -6,7 +6,7 @@ RUN apk add --no-cache ffmpeg
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --production
+RUN npm install
 
 COPY server.js ./
 
