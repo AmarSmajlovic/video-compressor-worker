@@ -95,33 +95,17 @@ app.post("/compress", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Respond immediately so webhook doesn't timeout
-  res.json({ ok: true, message: "Compression added to queue" });
-
-  compressionQueue.push({ queueId, mediaFileId, storagePath });
-  processQueue();
-});
-
-// ── Background Queue System ───────────────────────────────────────────────────
-
-const compressionQueue = [];
-let isProcessingQueue = false;
-
-async function processQueue() {
-  if (isProcessingQueue || compressionQueue.length === 0) return;
-  isProcessingQueue = true;
-
-  const { queueId, mediaFileId, storagePath } = compressionQueue.shift();
-
+  // Process SYNCHRONOUSLY - keep HTTP connection alive so Railway doesn't sleep!
+  console.log(`[${queueId}] Starting compression inline (keeping connection alive)...`);
+  
   try {
     await processVideoJob(queueId, mediaFileId, storagePath);
+    res.json({ ok: true, message: "Compression complete" });
   } catch (err) {
-    console.error(`[${queueId}] Unhandled queue error:`, err);
-  } finally {
-    isProcessingQueue = false;
-    processQueue();
+    console.error(`[${queueId}] Compression failed:`, err.message);
+    res.status(500).json({ ok: false, error: err.message });
   }
-}
+});
 
 async function processVideoJob(queueId, mediaFileId, storagePath) {
   const ext = path.extname(storagePath) || ".mp4";
