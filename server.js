@@ -120,8 +120,8 @@ async function processQueue() {
 
 async function processVideoJob(queueId, mediaFileId, storagePath) {
   const ext = path.extname(storagePath) || ".mp4";
-  const inputPath = path.join(os.tmpdir(), `input_${queueId}${ext}`);
-  const outputPath = path.join(os.tmpdir(), `output_${queueId}.mp4`);
+  const inputPath = path.join("/app/data", `input_${queueId}${ext}`);
+  const outputPath = path.join("/app/data", `output_${queueId}.mp4`);
 
   async function dbLog(msg) {
     console.log(`[${queueId}] ${msg}`);
