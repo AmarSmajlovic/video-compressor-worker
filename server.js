@@ -79,6 +79,28 @@ function compressVideo(inputPath, outputPath) {
   });
 }
 
+// ── Self-ping to keep container alive while processing ──────────────────────
+
+let isProcessing = false;
+let keepAliveInterval = null;
+
+function startKeepAlive() {
+  if (keepAliveInterval) return;
+  const PORT = process.env.PORT || 3001;
+  keepAliveInterval = setInterval(() => {
+    fetch(`http://localhost:${PORT}/health`).catch(() => {});
+  }, 5000);
+  console.log("[KEEPALIVE] Started self-ping every 5s");
+}
+
+function stopKeepAlive() {
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+    console.log("[KEEPALIVE] Stopped");
+  }
+}
+
 // ── Webhook endpoint ──────────────────────────────────────────────────────────
 
 app.post("/compress", async (req, res) => {
@@ -95,15 +117,35 @@ app.post("/compress", async (req, res) => {
     return res.status(400).json({ error: "Missing required fields" });
   }
 
-  // Process SYNCHRONOUSLY - keep HTTP connection alive so Railway doesn't sleep!
-  console.log(`[${queueId}] Starting compression inline (keeping connection alive)...`);
-  
+  // Respond IMMEDIATELY so Supabase doesn't timeout and retry!
+  res.json({ ok: true, message: "Compression started" });
+
+  // Atomic claim: only process if we can set status from 'pending' to 'processing'
+  const { data: claimed } = await admin
+    .from("video_compression_queue")
+    .update({ status: "processing", updated_at: new Date().toISOString() })
+    .eq("id", queueId)
+    .eq("status", "pending")
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    console.log(`[${queueId}] Already claimed by another request, skipping`);
+    return;
+  }
+
+  // Keep container alive during processing
+  startKeepAlive();
+  isProcessing = true;
+
   try {
+    console.log(`[${queueId}] Processing video...`);
     await processVideoJob(queueId, mediaFileId, storagePath);
-    res.json({ ok: true, message: "Compression complete" });
   } catch (err) {
     console.error(`[${queueId}] Compression failed:`, err.message);
-    res.status(500).json({ ok: false, error: err.message });
+    await updateQueueStatus(queueId, "failed", err.message).catch(() => {});
+  } finally {
+    isProcessing = false;
+    stopKeepAlive();
   }
 });
 
@@ -120,19 +162,7 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
   }
 
   try {
-    // Skip if already picked up
-    const { data: queueRow } = await admin
-      .from("video_compression_queue")
-      .select("status")
-      .eq("id", queueId)
-      .single();
-
-    if (queueRow?.status !== "pending") {
-      console.log(`[${queueId}] Already processed, skipping`);
-      return;
-    }
-
-    await updateQueueStatus(queueId, "processing");
+    // Status already set to "processing" atomically in webhook handler
 
 
     // 1. Stream download from expert-media directly to disk (avoids loading into memory)
