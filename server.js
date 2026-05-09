@@ -1,6 +1,7 @@
 const express = require("express");
 const ffmpeg = require("fluent-ffmpeg");
 const { createClient } = require("@supabase/supabase-js");
+const ws = require("ws");
 const { promises: fs } = require("fs");
 const path = require("path");
 const os = require("os");
@@ -14,6 +15,7 @@ const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 
 const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
+  realtime: { transport: ws },
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
