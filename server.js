@@ -201,15 +201,23 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
       console.log("Probe failed:", e.message);
     }
 
-    // 3. Compress
+    // 3. Skip compression if file is 50MB or under
+    const { size: inputSize } = await fs.stat(inputPath);
+    if (inputSize <= 50 * 1024 * 1024) {
+      await dbLog(`Video is ${(inputSize / 1024 / 1024).toFixed(1)}MB (≤50MB), skipping compression`);
+      await updateQueueStatus(queueId, "done", null);
+      return;
+    }
+
+    // 4. Compress
     await dbLog("Compressing...");
     await compressVideo(inputPath, outputPath);
 
-    // 3. Get compressed file size (without loading into memory)
+    // 5. Get compressed file size (without loading into memory)
     const { size: compressedSize } = await fs.stat(outputPath);
     await dbLog(`Compressed to ${(compressedSize / 1024 / 1024).toFixed(1)} MB. Uploading...`);
 
-    // 4. Replace original file in expert-media with compressed version (stream upload)
+    // 6. Replace original file in expert-media with compressed version (stream upload)
     const destPath = storagePath.replace(/\.[^.]+$/, ".mp4");
     const compressedStream = require("fs").createReadStream(outputPath);
     const { error: uploadError } = await admin.storage
@@ -218,7 +226,7 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
 
     if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
-    // 5. Update file_size in DB (storage_path stays the same if ext was already .mp4,
+    // 7. Update file_size in DB (storage_path stays the same if ext was already .mp4,
     //    or update it if the extension changed e.g. .mov → .mp4)
     await admin
       .from("media_files")
@@ -227,7 +235,7 @@ async function processVideoJob(queueId, mediaFileId, storagePath) {
 
     await updateQueueStatus(queueId, "done", null); // Wipe progress logs on success
 
-    // 6. If original was a different format, remove it
+    // 8. If original was a different format, remove it
     if (destPath !== storagePath) {
       await admin.storage.from("expert-media").remove([storagePath]);
     }
